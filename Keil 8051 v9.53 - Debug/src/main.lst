@@ -1,0 +1,165 @@
+C51 COMPILER V9.53.0.0   MAIN                                                              09/16/2019 23:37:48 PAGE 1   
+
+
+C51 COMPILER V9.53.0.0, COMPILATION OF MODULE MAIN
+OBJECT MODULE PLACED IN .\src\main.OBJ
+COMPILER INVOKED BY: c:\SiliconLabs\SimplicityStudio\v4\developer\toolchains\keil_8051\9.53\BIN\C51.exe C:\Users\newan\S
+                    -implicityStudio\v4_workspace\Gamecube_controller_start\src\main.c OMF2 SMALL DEBUG OBJECTEXTEND ROM(LARGE) WARNINGLEVEL(
+                    -2) FLOATFUZZY(3) OPTIMIZE(8,SPEED) INTVECTOR(0X0000) INTPROMOTE INCDIR(C:\Users\newan\SimplicityStudio\v4_workspace\Game
+                    -cube_controller_start\inc;C:/SiliconLabs/SimplicityStudio/v4/developer/sdks/8051/v4.1.7//kits/common/drivers/efm8_retarg
+                    -etserial;C:/SiliconLabs/SimplicityStudio/v4/developer/sdks/8051/v4.1.7//Device/shared/si8051Base;C:/SiliconLabs/Simplici
+                    -tyStudio/v4/developer/sdks/8051/v4.1.7//Device/EFM8UB1/inc) PRINT(.\src\main.lst) COND PAGEWIDTH(120) PAGELENGTH(65) OBJ
+                    -ECT(.\src\main.OBJ)
+
+line level    source
+
+   1          //-----------------------------------------------------------------------------
+   2          // EFM8UB1_UART0_Interrupt.c
+   3          //-----------------------------------------------------------------------------
+   4          // Copyright 2014 Silicon Laboratories, Inc.
+   5          // http://developer.silabs.com/legal/version/v11/Silicon_Labs_Software_License_Agreement.txt
+   6          //
+   7          // Program Description:
+   8          //
+   9          // This program demonstrates how to configure the EFM8UB1 to write to and
+  10          // read from the UART0 interface. The program reads a word using the UART0
+  11          // interrupt and outputs that word to the screen, with all characters in
+  12          // uppercase.
+  13          //
+  14          // Resources:
+  15          //   SYSCLK - 24.5 MHz HFOSC0 / 1
+  16          //   UART0  - 115200 baud, 8-N-1
+  17          //   Timer1 - UART0 clock source
+  18          //   P0.4   - UART0 TX
+  19          //   P0.5   - UART0 RX
+  20          //   P2.0   - Board Controller enable
+  21          //   P2.3   - Display enable
+  22          //
+  23          //-----------------------------------------------------------------------------
+  24          // How To Test: EFM8UB1 STK
+  25          //-----------------------------------------------------------------------------
+  26          // 1) Place the switch in "AEM" mode.
+  27          // 2) Connect the EFM8UB1 STK board to a PC using a mini USB cable.
+  28          // 3) Compile and download code to the EFM8UB1 STK board.
+  29          //    In Simplicity Studio IDE, select Run -> Debug from the menu bar,
+  30          //    click the Debug button in the quick menu, or press F11.
+  31          // 4) On the PC, open HyperTerminal (or any other terminal program) and connect
+  32          //    to the JLink CDC UART Port at 115200 baud rate and 8-N-1.
+  33          // 5) Run the code.
+  34          //    In Simplicity Studio IDE, select Run -> Resume from the menu bar,
+  35          //    click the Resume button in the quick menu, or press F8.
+  36          // 6) Using a terminal program on the PC, input any number of lower-case
+  37          //    characters, up to UART_BUFFERSIZE (default 64), followed by either
+  38          //    a carriage return ('\r'), a newline character ('\n'), or a tilda ('~').
+  39          //    The program will change the input characters to upper-case and output
+  40          //    them over UART.
+  41          //
+  42          // Target:         EFM8UB1
+  43          // Tool chain:     Generic
+  44          //
+  45          // Release 0.1 (ST)
+  46          //    - Initial Revision
+  47          //    - 10 OCT 2014
+  48          //
+  49          
+  50          //-----------------------------------------------------------------------------
+C51 COMPILER V9.53.0.0   MAIN                                                              09/16/2019 23:37:48 PAGE 2   
+
+  51          // Includes
+  52          //-----------------------------------------------------------------------------
+  53          #include <SI_EFM8UB1_Register_Enums.h>
+  54          #include "retargetserial.h"
+  55          #include "InitDevice.h"
+  56          
+  57          //-----------------------------------------------------------------------------
+  58          // Pin Definitions
+  59          //-----------------------------------------------------------------------------
+  60          SI_SBIT (DISP_EN, SFR_P2, 3);          // Display Enable
+  61          #define DISP_BC_DRIVEN   0             // 0 = Board Controller drives display
+  62          #define DISP_EFM8_DRIVEN 1             // 1 = EFM8 drives display
+  63          
+  64          SI_SBIT (BC_EN, SFR_P2, 0);            // Board Controller Enable
+  65          #define BC_DISCONNECTED 0              // 0 = Board Controller disconnected
+  66                                                 //     to EFM8 UART pins
+  67          #define BC_CONNECTED    1              // 1 = Board Controller connected
+  68                                                 //     to EFM8 UART pins
+  69          
+  70          //-----------------------------------------------------------------------------
+  71          // Global Variables
+  72          //-----------------------------------------------------------------------------
+  73          // Variables in Interrupts.c
+  74          extern uint8_t UART_Buffer_Size;
+  75          extern uint8_t TX_Ready;
+  76          extern uint8_t Byte;
+  77          
+  78          int counter;
+  79          //-----------------------------------------------------------------------------
+  80          // SiLabs_Startup() Routine
+  81          // ----------------------------------------------------------------------------
+  82          // This function is called immediately after reset, before the initialization
+  83          // code is run in SILABS_STARTUP.A51 (which runs before main() ). This is a
+  84          // useful place to disable the watchdog timer, which is enable by default
+  85          // and may trigger before main() in some instances.
+  86          //-----------------------------------------------------------------------------
+  87          void SiLabs_Startup (void)
+  88          {
+  89   1        // Disable the watchdog here
+  90   1      }
+  91           
+  92          //-----------------------------------------------------------------------------
+  93          // Main Routine
+  94          //-----------------------------------------------------------------------------
+  95          void main (void)
+  96          {
+  97   1         enter_DefaultMode_from_RESET();
+  98   1      
+  99   1         DISP_EN = DISP_BC_DRIVEN;           // EFM8 does not drive display
+ 100   1      
+ 101   1         BC_EN = BC_CONNECTED;               // Board controller connected to EFM8
+ 102   1                                             // UART pins
+ 103   1         IE_EA = 1;
+ 104   1      
+ 105   1         counter = 0;
+ 106   1      
+ 107   1         while(1)
+ 108   1         {
+ 109   2            // If the complete word has been entered via the terminal followed by
+ 110   2            // carriage return or newline
+ 111   2      
+ 112   2                 if(counter >= 10000){
+ 113   3                         printf("Nyanpasu!\r\n");
+C51 COMPILER V9.53.0.0   MAIN                                                              09/16/2019 23:37:48 PAGE 3   
+
+ 114   3                         counter = 0;
+ 115   3                 }
+ 116   2      
+ 117   2            if((TX_Ready == 1) && (UART_Buffer_Size != 0) && ((Byte == '\r') || (Byte == '\n') || (Byte == '~'))
+             -)
+ 118   2            {
+ 119   3               TX_Ready = 0;                 // Set the flag to zero
+ 120   3               SCON0_TI = 1;                 // Set transmit flag to 1
+ 121   3            }
+ 122   2         }
+ 123   1      
+ 124   1         counter++;
+ 125   1      }
+*** WARNING C294 IN LINE 124 OF C:\Users\newan\SimplicityStudio\v4_workspace\Gamecube_controller_start\src\main.c: unrea
+             -chable code
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =     75    ----
+   CONSTANT SIZE    =     12    ----
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =      2    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+   EDATA SIZE       =   ----    ----
+   HDATA SIZE       =   ----    ----
+   XDATA CONST SIZE =   ----    ----
+   FAR CONST SIZE   =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  1 WARNING(S),  0 ERROR(S)

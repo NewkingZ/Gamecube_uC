@@ -75,6 +75,7 @@ extern uint8_t UART_Buffer_Size;
 extern uint8_t TX_Ready;
 extern uint8_t Byte;
 
+int counter;
 //-----------------------------------------------------------------------------
 // SiLabs_Startup() Routine
 // ----------------------------------------------------------------------------
@@ -101,10 +102,17 @@ void main (void)
                                        // UART pins
    IE_EA = 1;
 
+   counter = 0;
+
    while(1)
    {
       // If the complete word has been entered via the terminal followed by
       // carriage return or newline
+
+	   if(counter >= 10000){
+		   printf("Nyanpasu!\r\n");
+		   counter = 0;
+	   }
 
       if((TX_Ready == 1) && (UART_Buffer_Size != 0) && ((Byte == '\r') || (Byte == '\n') || (Byte == '~')))
       {
@@ -112,4 +120,6 @@ void main (void)
          SCON0_TI = 1;                 // Set transmit flag to 1
       }
    }
+
+   counter++;
 }
